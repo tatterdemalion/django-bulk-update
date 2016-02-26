@@ -56,6 +56,11 @@ bulk_update(people)  # updates all columns using the default db
 bulk_update(people, batch_size=50000)  # updates all columns by 50000 sized chunks using the default db
 ```
 
+Note: You can consider to use `.only('name')` when you only want to update `name`, so that Django will only retrieve name data from db.
+
+And consider to use `.defer('username')` when you don't want to update `username`, so Django won't retrieve username from db.
+These optimization can improve the performance even more.
+
 Performance Tests:
 ==================================
 Here we test the performance of the `bulk_update` function vs. simply calling
@@ -131,6 +136,8 @@ Contributors
 - [torchingloom](https://github.com/torchingloom)
 - [cihann](https://github.com/cihann)
 - [wetneb](https://github.com/wetneb)
+- [tatterdemalion](https://github.com/tatterdemalion)
+- [gabriel-laet](https://github.com/gabriel-laet)
 
 TODO
 ==================================

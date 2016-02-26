@@ -5,7 +5,7 @@ import random
 from django.test import TestCase
 from django.utils import timezone
 
-from .models import Person
+from .models import Person, Role
 from .fixtures import create_fixtures
 
 
@@ -174,6 +174,89 @@ class BulkUpdateTests(TestCase):
             self.assertEqual(person1.age, person2.age)
             self.assertNotEqual(person1.height, person2.height)
 
+    def test_update_foreign_key_fields(self):
+        roles = [Role.objects.create(code=1), Role.objects.create(code=2)]
+        people = Person.objects.order_by('pk').all()
+        for idx, person in enumerate(people):
+            person.age += 1
+            person.height += Decimal('0.01')
+            person.role = roles[0] if idx % 2 == 0 else roles[1]
+        Person.objects.bulk_update(people)
+
+        people2 = Person.objects.order_by('pk').all()
+        for person1, person2 in zip(people, people2):
+            self.assertEqual(person1.role.code, person2.role.code)
+            self.assertEqual(person1.age, person2.age)
+            self.assertEqual(person1.height, person2.height)
+
+    def test_update_foreign_key_fields_explicit(self):
+        roles = [Role.objects.create(code=1), Role.objects.create(code=2)]
+        people = Person.objects.order_by('pk').all()
+        for idx, person in enumerate(people):
+            person.age += 1
+            person.height += Decimal('0.01')
+            person.role = roles[0] if idx % 2 == 0 else roles[1]
+        Person.objects.bulk_update(people,
+                                   update_fields=['age', 'height', 'role'])
+
+        people2 = Person.objects.order_by('pk').all()
+        for person1, person2 in zip(people, people2):
+            self.assertEqual(person1.role.code, person2.role.code)
+            self.assertEqual(person1.age, person2.age)
+            self.assertEqual(person1.height, person2.height)
+
+    def test_update_foreign_key_fields_explicit_with_id_suffix(self):
+        roles = [Role.objects.create(code=1), Role.objects.create(code=2)]
+        people = Person.objects.order_by('pk').all()
+        for idx, person in enumerate(people):
+            person.age += 1
+            person.height += Decimal('0.01')
+            person.role = roles[0] if idx % 2 == 0 else roles[1]
+        Person.objects.bulk_update(people,
+                                   update_fields=['age', 'height', 'role_id'])
+
+        people2 = Person.objects.order_by('pk').all()
+        for person1, person2 in zip(people, people2):
+            self.assertEqual(person1.role.code, person2.role.code)
+            self.assertEqual(person1.age, person2.age)
+            self.assertEqual(person1.height, person2.height)
+
+    def test_update_foreign_key_exclude_fields_explicit(self):
+        roles = [Role.objects.create(code=1), Role.objects.create(code=2)]
+        people = Person.objects.order_by('pk').all()
+        for idx, person in enumerate(people):
+            person.age += 1
+            person.height += Decimal('0.01')
+            person.role = roles[0] if idx % 2 == 0 else roles[1]
+        Person.objects.bulk_update(people,
+                                   update_fields=['age', 'height'],
+                                   exclude_fields=['role'])
+
+        people2 = Person.objects.order_by('pk').all()
+        for person1, person2 in zip(people, people2):
+            self.assertTrue(isinstance(person1.role, Role))
+            self.assertEqual(person2.role, None)
+            self.assertEqual(person1.age, person2.age)
+            self.assertEqual(person1.height, person2.height)
+
+    def test_update_foreign_key_exclude_fields_explicit_with_id_suffix(self):
+        roles = [Role.objects.create(code=1), Role.objects.create(code=2)]
+        people = Person.objects.order_by('pk').all()
+        for idx, person in enumerate(people):
+            person.age += 1
+            person.height += Decimal('0.01')
+            person.role = roles[0] if idx % 2 == 0 else roles[1]
+        Person.objects.bulk_update(people,
+                                   update_fields=['age', 'height'],
+                                   exclude_fields=['role_id'])
+
+        people2 = Person.objects.order_by('pk').all()
+        for person1, person2 in zip(people, people2):
+            self.assertTrue(isinstance(person1.role, Role))
+            self.assertEqual(person2.role, None)
+            self.assertEqual(person1.age, person2.age)
+            self.assertEqual(person1.height, person2.height)
+
     def test_exclude_fields(self):
         """
             Only the fields not in "exclude_fields" are updated
@@ -214,3 +297,44 @@ class BulkUpdateTests(TestCase):
         """
         Person.objects.bulk_update(Person.objects.filter(name="Aceldotanrilsteucsebces ECSbd (funny name, isn't it?)"))
 
+    def test_one_sized_list(self):
+        """
+        Update one sized list, check if have a syntax error for some db backends.
+        """
+        Person.objects.bulk_update(Person.objects.all()[:1])
+
+    def test_one_sized_queryset(self):
+        """
+        Update one sized list, check if have a syntax error for some db backends.
+        """
+        Person.objects.bulk_update(Person.objects.filter(name='Mike'))
+
+    def test_wrong_field_names(self):
+        people = Person.objects.order_by('pk').all()
+        for idx, person in enumerate(people):
+            person.big_age = idx + 27
+        self.assertRaises(TypeError, Person.objects.bulk_update, people, update_fields=['somecolumn', 'name'])
+
+        people = Person.objects.order_by('pk').all()
+        for idx, person in enumerate(people):
+            person.big_age = idx + 27
+        self.assertRaises(TypeError, Person.objects.bulk_update, people, exclude_fields=['somecolumn'])
+
+        people = Person.objects.order_by('pk').all()
+        for idx, person in enumerate(people):
+            person.big_age = idx + 27
+        self.assertRaises(TypeError, Person.objects.bulk_update, people,
+                          update_fields=['somecolumn'], exclude_fields=['someothercolumn'])
+
+    def test_batch_size(self):
+        people = Person.objects.order_by('pk').all()
+        for idx, person in enumerate(people):
+            person.age += 1
+            person.height += Decimal('0.01')
+        updated_obj_count = Person.objects.bulk_update(people, batch_size=1)
+        self.assertEqual(updated_obj_count, len(people))
+
+        people2 = Person.objects.order_by('pk').all()
+        for person1, person2 in zip(people, people2):
+            self.assertEqual(person1.age, person2.age)
+            self.assertEqual(person1.height, person2.height)

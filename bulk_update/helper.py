@@ -32,6 +32,18 @@ def grouper(iterable, size):
         yield chunk
 
 
+def validate_fields(meta, fields):
+    meta_fields = [f.attname for f in meta.fields]
+    meta_fields += [f[:-3] for f in meta_fields if f.endswith('_id')]
+    invalid_fields = []
+    for field in fields or []:
+        if field not in meta_fields:
+            invalid_fields.append(field)
+    if invalid_fields:
+        raise TypeError(u'These fields are not present in '
+                        'current meta: {}'.format(', '.join(invalid_fields)))
+
+
 def bulk_update(objs, meta=None, update_fields=None, exclude_fields=None,
                 using='default', batch_size=None, pk_field='pk'):
     assert batch_size is None or batch_size > 0
@@ -55,14 +67,19 @@ def bulk_update(objs, meta=None, update_fields=None, exclude_fields=None,
         pk_field = meta.pk.name
 
     exclude_fields = exclude_fields or []
-    update_fields = update_fields or meta.get_all_field_names()
+    update_fields = update_fields or [f.attname for f in meta.fields]
+    validate_fields(meta, update_fields + exclude_fields)
     fields = [
         f for f in meta.fields
         if ((not isinstance(f, models.AutoField))
-            and (f.attname in update_fields))]
+            and ((f.attname in update_fields) or
+                 (f.attname.endswith('_id') and
+                  f.attname[:-3] in update_fields)))]
     fields = [
         f for f in fields
-        if f.attname not in exclude_fields]
+        if ((f.attname not in exclude_fields) or
+            (f.attname.endswith('_id') and
+             f.attname[:-3] not in exclude_fields))]
 
     # The case clause template; db-dependent
     # Apparently, mysql's castable types are very limited and have
@@ -87,6 +104,7 @@ def bulk_update(objs, meta=None, update_fields=None, exclude_fields=None,
     quote_mark = '"' if 'mysql' not in vendor else '`'
     case_clause_template = case_clause_template.replace('"', quote_mark)
 
+    lenpks = 0
     for objs_batch in grouper(objs, batch_size):
         pks = []
         case_clauses = {}
@@ -150,8 +168,8 @@ def bulk_update(objs, meta=None, update_fields=None, exclude_fields=None,
                 .format(
                     dbtable=dbtable, values=values, pkcolumn=pkcolumn,
                     in_clause_sql=in_clause_sql))
-            lenpks = len(pks)
+            lenpks += len(pks)
             del values, pks
 
             connection.cursor().execute(sql, parameters)
-            return lenpks
+    return lenpks
